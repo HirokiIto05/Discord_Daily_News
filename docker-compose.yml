@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  discord-news-bot:
+    build: .
+    container_name: discord-news-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GUILD_ID=${GUILD_ID}
+      - CHANNEL_IDS=${CHANNEL_IDS}
+      - SUMMARY_CHANNEL_ID=${SUMMARY_CHANNEL_ID}
+      - SUMMARY_INTERVAL_HOURS=${SUMMARY_INTERVAL_HOURS:-3}
+    volumes:
+      # ログとデータの永続化
+      - ./logs:/app/logs
+      - ./summaries:/app/summaries
+      # 設定ファイルのマウント（オプション）
+      - ./.env:/app/.env:ro
+    networks:
+      - discord-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  discord-network:
+    driver: bridge
+
+volumes:
+  logs:
+  summaries:

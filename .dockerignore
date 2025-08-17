@@ -1,0 +1,51 @@
+# Docker関連ファイル
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# コンテナ生成ファイル
+logs/
+summaries/
+
+# 環境変数ファイル
+.env
+
+# ログファイル
+*.log
+
+# Python関連
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDE関連
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS関連
+.DS_Store
+Thumbs.db
+
+# Git関連
+.git
+.gitignore
