@@ -2,11 +2,14 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timedelta
-from openai import OpenAI
+from datetime import datetime, timedelta, timezone
+import openai
 import aiofiles
 import aiohttp
 import config
+
+# OpenAI設定
+openai.api_key = config.OPENAI_API_KEY
 
 # ログ設定
 logging.basicConfig(
@@ -23,18 +26,18 @@ class SimpleDiscordSummarizer:
     """Discord API直接使用による最小構成の要約システム"""
     
     def __init__(self):
-        self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
         self.last_run_file = "last_run.json"
-        self.discord_token = config.DISCORD_BOT_TOKEN
+        self.session = None
         self.headers = {
-            'Authorization': f'Bot {self.discord_token}',
-            'Content-Type': 'application/json'
+            "Authorization": f"Bot {config.DISCORD_BOT_TOKEN}",
+            "Content-Type": "application/json",
+            "User-Agent": "Discord-News-Summarizer/1.0"
         }
         
     async def get_last_run_times(self):
         """最後の実行時刻を取得"""
         try:
-            if os.path.exists(self.last_run_file):
+            if os.path.isfile(self.last_run_file):
                 async with aiofiles.open(self.last_run_file, 'r') as f:
                     data = json.loads(await f.read())
                     return {int(k): datetime.fromisoformat(v) for k, v in data.items()}
@@ -50,6 +53,46 @@ class SimpleDiscordSummarizer:
                 await f.write(json.dumps(data, indent=2))
         except Exception as e:
             logger.error(f"最終実行時刻の保存エラー: {e}")
+    
+    async def resolve_channel_ids(self, session):
+        """チャンネル名をチャンネルIDに解決"""
+        resolved_ids = []
+        
+        for channel in config.CHANNEL_IDS:
+            if isinstance(channel, int):
+                # 既に数値の場合はそのまま使用
+                resolved_ids.append(channel)
+            else:
+                # 文字列の場合は名前からIDを解決
+                channel_id = await self.get_channel_id_by_name(session, channel)
+                if channel_id:
+                    resolved_ids.append(channel_id)
+                else:
+                    logger.warning(f"チャンネル名 '{channel}' のIDが見つかりませんでした")
+        
+        return resolved_ids
+    
+    async def get_channel_id_by_name(self, session, channel_name):
+        """チャンネル名からチャンネルIDを取得"""
+        if not config.GUILD_ID:
+            logger.error("GUILD_IDが設定されていません")
+            return None
+            
+        url = f"https://discord.com/api/v10/guilds/{config.GUILD_ID}/channels"
+        try:
+            async with session.get(url, headers=self.headers) as response:
+                if response.status == 200:
+                    channels = await response.json()
+                    for ch in channels:
+                        if ch.get('name') == channel_name and ch.get('type') == 0:  # テキストチャンネル
+                            logger.info(f"チャンネル名 '{channel_name}' のID: {ch['id']}")
+                            return int(ch['id'])
+                else:
+                    logger.error(f"チャンネル一覧取得失敗: {response.status}")
+        except Exception as e:
+            logger.error(f"チャンネル名解決エラー: {e}")
+        
+        return None
     
     async def fetch_channel_info(self, session, channel_id):
         """チャンネル情報を取得"""
@@ -127,7 +170,7 @@ class SimpleDiscordSummarizer:
         )
         
         try:
-            response = self.openai_client.chat.completions.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "あなたはDiscordの議論内容を要約する専門アシスタントです。"},
@@ -173,13 +216,21 @@ class SimpleDiscordSummarizer:
         
         async with aiohttp.ClientSession() as session:
             try:
+                # チャンネル名をIDに解決
+                resolved_channel_ids = await self.resolve_channel_ids(session)
+                if not resolved_channel_ids:
+                    logger.error("有効なチャンネルIDが見つかりませんでした")
+                    return []
+                
+                logger.info(f"解決されたチャンネルID: {resolved_channel_ids}")
+                
                 # 最後の実行時刻を取得
                 last_run_times = await self.get_last_run_times()
                 current_time = datetime.utcnow()
                 
                 # 各チャンネルを処理
                 summaries = []
-                for channel_id in config.CHANNEL_IDS:
+                for channel_id in resolved_channel_ids:
                     try:
                         # チャンネル名を取得
                         channel_name = await self.fetch_channel_info(session, channel_id)
@@ -189,6 +240,10 @@ class SimpleDiscordSummarizer:
                             since_time = last_run_times[channel_id]
                         else:
                             since_time = current_time - timedelta(hours=config.SUMMARY_INTERVAL_HOURS)
+                        
+                        # UTCタイムゾーンを追加（比較エラー回避）
+                        if since_time.tzinfo is None:
+                            since_time = since_time.replace(tzinfo=timezone.utc)
                         
                         logger.info(f"チャンネル {channel_name} の要約を開始 (since: {since_time})")
                         

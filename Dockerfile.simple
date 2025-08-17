@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY simple_scheduler.py config.py ./
 
 # データディレクトリ
-RUN mkdir -p /app/summaries
+RUN mkdir -p /app/summaries && rm -rf /app/last_run.json || true
 
 # 非rootユーザー
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
