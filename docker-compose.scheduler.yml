@@ -1,0 +1,26 @@
+# AWS ECS Fargate用のタスク定義
+version: '3.8'
+
+services:
+  discord-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: discord-scheduler
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GUILD_ID=${GUILD_ID}
+      - CHANNEL_IDS=${CHANNEL_IDS}
+      - SUMMARY_INTERVAL_HOURS=${SUMMARY_INTERVAL_HOURS:-3}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+    volumes:
+      - ./summaries:/app/summaries
+      - ./last_run.json:/app/last_run.json
+    restart: "no"  # 1回実行して終了
+    networks:
+      - scheduler-network
+
+networks:
+  scheduler-network:
+    driver: bridge

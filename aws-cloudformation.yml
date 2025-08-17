@@ -1,0 +1,175 @@
+# AWS CloudFormation template for scheduled Discord summarizer
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Discord News Summarizer with scheduled execution'
+
+Parameters:
+  ScheduleExpression:
+    Type: String
+    Default: 'rate(3 hours)'
+    Description: 'CloudWatch Events schedule expression'
+  
+  ECRRepository:
+    Type: String
+    Description: 'ECR repository URI for the Discord summarizer image'
+  
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: 'Subnet IDs for ECS tasks'
+  
+  SecurityGroupId:
+    Type: String
+    Description: 'Security Group ID for ECS tasks'
+
+Resources:
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: discord-summarizer-cluster
+
+  # Task Definition
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: discord-summarizer
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn: !Ref ECSExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      ContainerDefinitions:
+        - Name: discord-summarizer
+          Image: !Ref ECRRepository
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: DISCORD_BOT_TOKEN
+              Value: '{{resolve:secretsmanager:discord-bot-secrets:SecretString:DISCORD_BOT_TOKEN}}'
+            - Name: OPENAI_API_KEY
+              Value: '{{resolve:secretsmanager:discord-bot-secrets:SecretString:OPENAI_API_KEY}}'
+            - Name: GUILD_ID
+              Value: '{{resolve:secretsmanager:discord-bot-secrets:SecretString:GUILD_ID}}'
+            - Name: CHANNEL_IDS
+              Value: '{{resolve:secretsmanager:discord-bot-secrets:SecretString:CHANNEL_IDS}}'
+            - Name: DISCORD_WEBHOOK_URL
+              Value: '{{resolve:secretsmanager:discord-bot-secrets:SecretString:DISCORD_WEBHOOK_URL}}'
+
+  # CloudWatch Events Rule
+  ScheduledRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: 'Trigger Discord summarizer every 3 hours'
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ECSCluster.Arn
+          Id: discord-summarizer-target
+          RoleArn: !GetAtt EventBridgeRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref TaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: !Ref SubnetIds
+                SecurityGroups:
+                  - !Ref SecurityGroupId
+                AssignPublicIp: ENABLED
+
+  # IAM Roles
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref BotSecrets
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ECSTaskAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                Resource: !Ref TaskDefinition
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt ECSExecutionRole.Arn
+                  - !GetAtt ECSTaskRole.Arn
+
+  # CloudWatch Log Group
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/discord-summarizer
+      RetentionInDays: 7
+
+  # Secrets Manager for sensitive data
+  BotSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: discord-bot-secrets
+      Description: 'Discord bot configuration secrets'
+      SecretString: |
+        {
+          "DISCORD_BOT_TOKEN": "your_token_here",
+          "OPENAI_API_KEY": "your_api_key_here",
+          "GUILD_ID": "your_guild_id_here",
+          "CHANNEL_IDS": "channel1,channel2,channel3",
+          "DISCORD_WEBHOOK_URL": "your_webhook_url_here"
+        }
+
+Outputs:
+  ClusterName:
+    Description: 'ECS Cluster Name'
+    Value: !Ref ECSCluster
+  
+  TaskDefinitionArn:
+    Description: 'Task Definition ARN'
+    Value: !Ref TaskDefinition

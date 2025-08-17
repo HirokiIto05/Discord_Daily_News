@@ -12,7 +12,80 @@
 
 ## セットアップ
 
-### Docker を使用する場合（推奨）
+### 🎯 **超シンプル版（最推奨）**
+
+**リアルタイム通知不要、ファイル保存のみの最小構成**
+
+#### 1. 環境変数の設定
+
+```bash
+cp .env.example .env
+# .envファイルを編集（DISCORD_BOT_TOKEN, OPENAI_API_KEY, CHANNEL_IDSのみ）
+```
+
+#### 2. ワンクリック実行
+
+```bash
+# 超簡単実行
+./run-simple.sh
+```
+
+#### 3. 定期実行（Cron設定）
+
+```bash
+# crontabを編集
+crontab -e
+
+# 3時間ごとに実行
+0 */3 * * * cd /path/to/Discord_Daily_News && ./run-simple.sh
+```
+
+**📁 結果**: `summaries/` ディレクトリにJSONファイルで保存
+
+### 🔄 間欠実行モード（Webhook投稿あり）
+
+#### 1. 環境変数の設定
+
+```bash
+cp .env.example .env
+# .envファイルを編集して必要な値を設定
+# DISCORD_WEBHOOK_URL も設定すると結果を自動投稿
+```
+
+#### 2. 手動実行（テスト用）
+
+```bash
+# スケジューラーを1回実行
+./run-scheduler.sh
+
+# または直接Python実行
+python scheduler.py
+```
+
+#### 3. Cron設定（Linux/Mac）
+
+```bash
+# crontabを編集
+crontab -e
+
+# 3時間ごとに実行する設定を追加
+0 */3 * * * cd /path/to/Discord_Daily_News && ./run-scheduler.sh
+```
+
+#### 4. AWS CloudFormation（本格運用）
+
+```bash
+# CloudFormationテンプレートでデプロイ
+aws cloudformation create-stack \
+  --stack-name discord-summarizer \
+  --template-body file://aws-cloudformation.yml \
+  --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ECRRepository,ParameterValue=your-ecr-repo
+```
+
+### 🤖 常時稼働モード（従来のBot方式）
+
+#### Docker を使用する場合
 
 #### 1. 環境変数の設定
 
@@ -89,13 +162,115 @@ python main.py
 python main.py
 ```
 
-### 利用可能なコマンド
+## 🌐 外部サーバーへのデプロイ
+
+### Railway でのデプロイ（推奨）
+
+1. **Railwayアカウント作成**:
+   - [Railway](https://railway.app/) でアカウント作成
+
+2. **GitHubリポジトリ接続**:
+   - リポジトリをGitHubにプッシュ
+   - Railwayで「Deploy from GitHub」を選択
+
+3. **環境変数設定**:
+   - Railway ダッシュボードで環境変数を設定
+   - `.env.example` の内容を参考に設定
+
+4. **自動デプロイ**:
+   - `railway.toml` が自動的に検出されてデプロイ開始
+
+### AWS EC2 でのデプロイ
+
+1. **EC2インスタンス作成**:
+   - t3.nano または t2.micro を推奨
+   - Ubuntu 22.04 LTS を選択
+
+2. **SSH接続後、スクリプト実行**:
+   ```bash
+   curl -sSL https://raw.githubusercontent.com/HirokiIto05/Discord_Daily_News/main/deploy-aws.sh | bash
+   ```
+
+3. **環境変数設定**:
+   ```bash
+   nano .env  # 必要な値を設定
+   ```
+
+4. **起動**:
+   ```bash
+   ./deploy.sh
+   ```
+
+### VPS（DigitalOcean等）でのデプロイ
+
+1. **Droplet作成**:
+   - $4/月のBasicプランで十分
+   - Docker対応のイメージを選択
+
+2. **リポジトリクローン**:
+   ```bash
+   git clone https://github.com/HirokiIto05/Discord_Daily_News.git
+   cd Discord_Daily_News
+   ```
+
+3. **環境設定 & 起動**:
+   ```bash
+   cp .env.example .env
+   nano .env  # 設定編集
+   ./deploy.sh
+   ```
+
+## 利用可能なコマンド
 
 - `!summary [チャンネルID] [時間]` - 手動要約実行
   - 例: `!summary 123456789 6` (指定チャンネルの過去6時間を要約)
   - 例: `!summary` (現在のチャンネルの過去3時間を要約)
 
 - `!status` - ボットの動作状況確認
+
+## 💰 運用コストについて
+
+### OpenAI API 料金
+
+**⚠️ OpenAI APIの使用には支払い設定が必要です**
+
+1. **料金体系**:
+   - GPT-3.5-turbo: $0.0015/1K tokens (入力) + $0.002/1K tokens (出力)
+   - 1回の要約で約500-2000 tokens使用
+
+2. **月額費用の目安**:
+   ```
+   例：1日20回要約 × 30日 = 600回/月
+   費用: 約$1.5-2/月程度
+   ```
+
+3. **支払い設定**:
+   - [OpenAI Platform Billing](https://platform.openai.com/settings/organization/billing) でクレジットカード登録
+   - 使用量制限の設定を推奨
+
+### サーバー費用
+
+**実行方式によってコストが大幅に変わります**
+
+| 実行方式 | サーバー費用 | メリット | デメリット |
+|----------|--------------|----------|------------|
+| **🎯 超シンプル版（最推奨）** | **$0** | **最小構成、ローカル保存、設定簡単** | **通知なし** |
+| 間欠実行（Webhook投稿あり） | $0-1/月 | 低コスト、Discord投稿 | 設定が複雑 |
+| 自宅PC Cron | 無料 | コストなし | 停電・障害で停止 |
+| AWS Fargate (間欠) | $0.5-1/月 | 安定、従量課金 | 設定が複雑 |
+| VPS 常時稼働 | $4-6/月 | 安定稼働 | 24時間課金 |
+| AWS EC2 常時稼働 | $3-4/月 | 高信頼性 | 24時間課金 |
+| Railway/Render 常時稼働 | $5/月〜 | 簡単デプロイ | 制限あり |
+
+### 推奨構成
+
+**🏆 最もシンプル・コスト効率的**:
+- **超シンプル版 + 自宅Cron**: 月額$0（OpenAI APIのみ）
+- **設定最小限、通知不要、ファイル保存のみ**
+
+**🔔 Discord通知も必要な場合**:
+- 間欠実行 + Webhook: 月額$0-1
+- AWS Fargate + EventBridge: 月額$0.5-1
 
 ## 設定項目
 

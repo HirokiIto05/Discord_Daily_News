@@ -1,0 +1,27 @@
+# 超軽量・シンプル版 Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 必要最小限のパッケージ
+RUN apt-get update && apt-get install -y \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+
+# Python依存関係
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# アプリケーションコード
+COPY simple_scheduler.py config.py ./
+
+# データディレクトリ
+RUN mkdir -p /app/summaries
+
+# 非rootユーザー
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# シンプルスケジューラーを実行
+CMD ["python", "simple_scheduler.py"]

@@ -1,0 +1,27 @@
+# 間欠実行用の軽量Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 必要なパッケージのみインストール
+RUN apt-get update && apt-get install -y \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+
+# 依存関係をインストール
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# アプリケーションコードをコピー
+COPY . .
+
+# データディレクトリを作成
+RUN mkdir -p /app/summaries
+
+# 非rootユーザーを作成
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# スケジューラーを実行（1回のみ実行して終了）
+CMD ["python", "scheduler.py"]

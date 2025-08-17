@@ -1,0 +1,10 @@
+# Railway デプロイ用設定
+
+# Railway.toml
+[build]
+builder = "DOCKER"
+
+[deploy]
+startCommand = "python main.py"
+healthcheckPath = "/"
+healthcheckTimeout = 300
